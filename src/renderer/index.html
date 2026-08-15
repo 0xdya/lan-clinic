@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>نظام إدارة عيادة الأسنان | LAN Dental Clinic</title>
+
+  <!-- Eye-Comfort & Modern Styling -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Local socket.io client script -->
+  <script src="../../node_modules/socket.io-client/dist/socket.io.js"></script>
+</head>
+<body>
+
+  <!-- ======================================================================
+       HEADER BAR
+       ====================================================================== -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">🦷</div>
+      <div class="brand-title">
+        عيادة الأسنان
+        <span id="role-badge" class="role-badge doctor">طبيب (Doctor)</span>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div class="connection-indicator">
+        <span id="connection-dot" class="status-dot offline"></span>
+        <span id="connection-text">غير متصل بالشبكة</span>
+        <code id="host-ip-display" style="margin-right: 0.5rem; font-size: 0.78rem;"></code>
+      </div>
+      <button id="btn-switch-role" class="btn-secondary" title="تغيير وضع التشغيل">
+        🔄 تغيير الوضع
+      </button>
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       ROLE SELECTION MODAL (LAUNCH SCREEN)
+       ====================================================================== -->
+  <div id="role-modal-overlay" class="modal-overlay">
+    <div class="role-modal">
+      <div class="modal-header">
+        <h2>اختر وضع تشغيل التطبيق</h2>
+        <p>نظام الانتظار وإدارة مراجعات عيادة الأسنان - النسخة المحلية (LAN)</p>
+      </div>
+
+      <div class="role-cards-grid">
+        <!-- Doctor Role Card -->
+        <div id="card-role-doctor" class="role-card selected" onclick="selectRoleCard('doctor')">
+          <div class="role-card-icon">👨‍⚕️</div>
+          <h3>وضع الطبيب (Host Server)</h3>
+          <p>
+            تشغيل الخادم المحلي وقاعدة البيانات.
+            عرض الملاحظات الطبية وسجل العلاج مع الاطلاع على لائحة الدور.
+          </p>
+        </div>
+
+        <!-- Secretary Role Card -->
+        <div id="card-role-secretary" class="role-card" onclick="selectRoleCard('secretary')">
+          <div class="role-card-icon">📋</div>
+          <h3>وضع السكرتارية (LAN Client)</h3>
+          <p>
+            الاتصال بالحاسوب الرئيسي للطبيب عبر الشبكة المحلية.
+            تسجيل المرضى وتوجيه أزرار الدور والانتظار.
+          </p>
+        </div>
+      </div>
+
+      <!-- IP Config for Secretary Mode -->
+      <div id="ip-config-box" class="ip-config-box">
+        <div class="form-group">
+          <label for="server-ip-input">عنوان IP لحاسوب الطبيب (Host Server IP):</label>
+          <input type="text" id="server-ip-input" class="form-control" dir="ltr" placeholder="مثال: 192.168.1.100" />
+          <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.2rem; display: block;">
+            💡 اتركه فارغاً إذا كان الخادم يعمل على نفس الجهاز (127.0.0.1)
+          </small>
+        </div>
+      </div>
+
+      <button id="btn-confirm-role" class="btn-primary">
+        دخول التطبيق
+      </button>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       DOCTOR VIEW (WORKSPACES)
+       ====================================================================== -->
+  <div id="doctor-view" class="app-container hidden">
+    <div class="workspace-layout">
+      
+      <!-- MAIN: Current Patient & Notes -->
+      <main class="main-content-panel">
+        
+        <!-- Active Patient High-Contrast Banner -->
+        <div id="active-patient-banner" class="active-patient-banner hidden">
+          <div class="banner-top-row">
+            <span class="queue-tag">رقم الانتظار: <strong id="active-queue-num">#1</strong></span>
+            <span class="patient-status-chip badge-status in-progress">في العيادة حالياً</span>
+          </div>
+          <h1 id="active-patient-name" class="patient-name-title">---</h1>
+          <div class="patient-meta-grid">
+            <div class="meta-item">
+              <span> العمر:</span>
+              <strong id="active-patient-age">-- سنة</strong>
+            </div>
+            <div class="meta-item">
+              <span> الهاتف:</span>
+              <strong id="active-patient-phone" dir="ltr">--</strong>
+            </div>
+            <div class="meta-item">
+              <span> تاريخ الزيارة:</span>
+              <strong id="active-patient-date">اليوم</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State when no active patient -->
+        <div id="no-active-patient-box" class="no-active-patient">
+          <div class="no-active-patient-icon">🩺</div>
+          <h3>لا يوجد مريض بقاعة الفحص حالياً</h3>
+          <p>عندما تقوم السكرتارية بنداء مريض (In Progress)، ستظهر بياناته هنا فوراً.</p>
+        </div>
+
+        <!-- Clinical Notes Card -->
+        <div class="notes-card">
+          <div class="card-title-bar">
+            <h3>📝 الملاحظات الطبية وخط العلاج</h3>
+            <div id="notes-save-status" class="save-indicator">
+              <span>محفوظ</span>
+            </div>
+          </div>
+
+          <!-- Quick Template Pills -->
+          <div class="template-pills">
+            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">نماذج سريعة:</span>
+            <button class="pill-btn" onclick="insertNoteTemplate('فحص روتيني وتنظيف أسنان.')">+ فحص روتيني</button>
+            <button class="pill-btn" onclick="insertNoteTemplate('حشو عصب (Root Canal Treatment).')">+ حشو عصب</button>
+            <button class="pill-btn" onclick="insertNoteTemplate('خلع جراحي للضرس.')">+ خلع جراحي</button>
+            <button class="pill-btn" onclick="insertNoteTemplate('تركيب زيركون / تاج أسنان.')">+ تركيب زيركون</button>
+            <button class="pill-btn" onclick="insertNoteTemplate('وصفة طبية: مضاد حيوي + مسكن آلام.')">+ وصفة طبية</button>
+          </div>
+
+          <textarea id="doctor-notes-editor" class="notes-textarea" placeholder="اكتب الملاحظات الطبية، التشخيص، أو خطة العلاج هنا..."></textarea>
+
+          <div class="notes-actions">
+            <button id="btn-save-notes" class="btn-save-notes">
+              💾 حفظ الملاحظات
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <!-- SIDEBAR: Read-Only Queue Overview for Doctor -->
+      <aside class="sidebar-panel">
+        <div class="sidebar-header">
+          <div class="sidebar-title-row">
+            <h3>قائمة دور اليوم</h3>
+            <span id="doctor-queue-count" class="queue-count-badge">0 مريض</span>
+          </div>
+
+          <div class="filter-tabs">
+            <button class="tab-btn active" onclick="filterQueue('all', this)">الكل</button>
+            <button class="tab-btn" onclick="filterQueue('Waiting', this)">في الانتظار</button>
+            <button class="tab-btn" onclick="filterQueue('Completed', this)">المكتملين</button>
+          </div>
+        </div>
+
+        <!-- Queue Cards List -->
+        <div id="doctor-queue-list" class="queue-list-container">
+          <!-- Dynamically populated -->
+        </div>
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       SECRETARY VIEW (INTAKE & QUEUE CONTROL)
+       ====================================================================== -->
+  <div id="secretary-view" class="app-container hidden">
+    <div class="secretary-layout">
+      
+      <!-- LEFT: Patient Intake & Search -->
+      <div class="intake-card">
+        <h3>👤 تسجيل مريض جديد</h3>
+
+        <form id="patient-registration-form" onsubmit="handlePatientRegistration(event)">
+          <div class="form-group">
+            <label for="reg-full-name">الاسم الكامل *</label>
+            <input type="text" id="reg-full-name" class="form-control" required placeholder="أدخل اسم المريض..." />
+          </div>
+
+          <div class="form-row" style="display: flex; gap: 0.75rem;">
+            <div class="form-group" style="flex: 1;">
+              <label for="reg-age">العمر</label>
+              <input type="number" id="reg-age" class="form-control" min="1" max="120" placeholder="مثال: 32" />
+            </div>
+
+            <div class="form-group" style="flex: 2;">
+              <label for="reg-phone">رقم الهاتف (Numeric Tel)</label>
+              <!-- type="tel" enforces numeric input on frontend as specified -->
+              <input type="tel" id="reg-phone" class="form-control" dir="ltr" placeholder="06XXXXXXXX" pattern="[0-9]*" />
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">
+            ➕ تسجيل وإضافة لقائمة الانتظار
+          </button>
+        </form>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0.5rem 0;" />
+
+        <!-- Search Existing Patient Database -->
+        <h3>🔍 البحث عن مريض سابق</h3>
+
+        <div class="search-box">
+          <input type="text" id="search-patient-input" class="form-control" placeholder="ابحث بالاسم أو الهاتف..." oninput="handlePatientSearch(this.value)" />
+          <span class="search-icon">🔍</span>
+        </div>
+
+        <div id="search-results-list" class="search-results-list">
+          <!-- Dynamically populated: all patients by default, filtered when searching -->
+        </div>
+      </div>
+
+      <!-- RIGHT: Interactive Queue Control Panel -->
+      <div class="sidebar-panel">
+        <div class="sidebar-header">
+          <div class="sidebar-title-row">
+            <h3>📋 التحكم في دور الانتظار المباشر</h3>
+            <span id="secretary-queue-count" class="queue-count-badge">0 مريض</span>
+          </div>
+
+          <div class="filter-tabs">
+            <button class="tab-btn active" onclick="filterSecretaryQueue('all', this)">الكل</button>
+            <button class="tab-btn" onclick="filterSecretaryQueue('Waiting', this)">في الانتظار</button>
+            <button class="tab-btn" onclick="filterSecretaryQueue('In Progress', this)">في العيادة</button>
+          </div>
+        </div>
+
+        <!-- Interactive Queue List for Secretary -->
+        <div id="secretary-queue-list" class="queue-list-container">
+          <!-- Dynamically populated with Call / Complete / Cancel buttons -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

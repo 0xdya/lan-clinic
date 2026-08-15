@@ -1,0 +1,65 @@
+{
+  "name": "lan-clinic",
+  "version": "1.0.0",
+  "description": "Dental Clinic Queue & Patient Manager (LAN Edition)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win --x64"
+  },
+  "keywords": ["dental", "clinic", "queue", "electron", "lan"],
+  "author": "Dental Clinic",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5",
+    "cors": "^2.8.5"
+  },
+  "build": {
+    "appId": "com.dental.lan-clinic",
+    "productName": "LAN Clinic",
+    "copyright": "Copyright © 2026",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LAN Clinic"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "data/",
+        "to": "data/",
+        "filter": ["**/*"]
+      }
+    ],
+    "asar": true
+  }
+}
