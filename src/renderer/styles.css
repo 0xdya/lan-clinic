@@ -68,6 +68,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* السماح بالاختيار والكتابة داخل الحقول ونصوص الملاحظات حتى لو body يمنع user-select */
+input, textarea, button, .notes-textarea, .form-control {
+  user-select: text;
+}
+
 /* ==========================================================================
    APP HEADER BAR
    ========================================================================== */
@@ -670,6 +675,7 @@ body {
 .queue-list-container {
   flex: 1;
   overflow-y: auto;
+  max-height: 70vh;
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
@@ -905,4 +911,205 @@ body {
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+
+
+/* =========================
+   Patient Detail Modal Styles
+   ========================= */
+
+/* اجعل الـ overlay داكنًا مع تمويه خفيف */
+#patient-detail-modal.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 18, 34, 0.55); /* داكن شفاف */
+  backdrop-filter: blur(6px) saturate(120%);
+  z-index: 1200;
+  padding: 2rem;
+}
+
+/* صندوق النافذة */
+.patient-modal {
+  width: 100%;
+  max-width: 760px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), #ffffff);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(10, 15, 30, 0.45);
+  border: 1px solid rgba(10, 10, 20, 0.06);
+  overflow: hidden;
+  max-height: calc(100vh - 4rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* رأس المودال: عنوان وزر إغلاق */
+.patient-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.25rem;
+  background: linear-gradient(90deg, rgba(79,70,229,0.06), rgba(13,148,136,0.03));
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+}
+.patient-modal .modal-header h2 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  color: var(--text-primary);
+  font-weight: 800;
+}
+.modal-close-btn {
+  background: rgba(0,0,0,0.06);
+  border: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.modal-close-btn:hover { background: rgba(0,0,0,0.09); }
+
+/* جسم المودال: قسم معلومات المريض وقسم الملاحظات */
+.patient-modal .patient-info,
+.patient-modal .patient-notes {
+  padding: 0.9rem 1.25rem;
+}
+
+/* معلومات المريض بشكل منظم */
+.patient-info {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 1rem;
+  align-items: center;
+  border-bottom: 1px dashed rgba(0,0,0,0.05);
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+.patient-info div { line-height: 1.3; }
+.patient-info .label { font-weight: 700; color: var(--text-primary); margin-left: 0.6rem; }
+
+/* عنوان قسم الملاحظات */
+.patient-notes h3 {
+  margin: 0 0 0.5rem 0;
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+/* لائحة الملاحظات قابلة للتمرير داخل النافذة */
+.modal-notes-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-right: 0.25rem; /* لعرض scrollbar دون تغطية المحتوى */
+}
+
+/* صف الملاحظة */
+.note-row {
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border-color);
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+/* بيانات الملاحظة: التاريخ أعلى المحتوى */
+.note-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+/* نص الملاحظة */
+.note-content {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+/* أزرار تعديل/حذف - صغيرة وواضحة */
+.note-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.note-actions button {
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.07);
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.note-actions button:hover {
+  background: rgba(0,0,0,0.04);
+  transform: translateY(-1px);
+}
+
+/* حقل إضافة ملاحظة جديد */
+.modal-new-note {
+  width: 100%;
+  min-height: 72px;
+  max-height: 140px;
+  resize: vertical;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  margin-top: 0.5rem;
+  outline: none;
+}
+.modal-new-note:focus {
+  box-shadow: 0 6px 20px rgba(99,102,241,0.12);
+  border-color: var(--border-focus);
+}
+
+/* منطقة الأفعال / الحفظ الكبيرة */
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.9rem 1.25rem 1.25rem;
+  border-top: 1px solid rgba(0,0,0,0.03);
+  justify-content: center; /* زر الحفظ في الوسط أو استخدم flex-end لو تفضل اليمين */
+}
+.modal-actions .btn-primary {
+  min-width: 240px;
+  max-width: 100%;
+  padding: 0.95rem 1.25rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  box-shadow: 0 6px 20px rgba(79,70,229,0.18);
+}
+
+/* تجاوب على الشاشات الصغيرة */
+@media (max-width: 560px) {
+  .patient-modal { max-width: 96%; padding: 0; border-radius: 10px; }
+  .patient-info { grid-template-columns: 1fr; gap: 0.25rem; }
+  .modal-notes-list { max-height: 260px; }
+  .modal-actions .btn-primary { min-width: 100%; }
+}
+
+/* السماح بالكتابة/الاختيار داخل الحقول حتى لو body يمنع user-select */
+input, textarea, button, .notes-textarea, .form-control, .modal-new-note {
+  user-select: text;
+  -webkit-user-select: text;
 }

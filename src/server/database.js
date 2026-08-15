@@ -149,6 +149,37 @@ function runMigrations() {
       ON patients(full_name);
   `);
 
+  // NEW: patient_notes table to keep a history of notes per patient
+  _db.run(`
+    CREATE TABLE IF NOT EXISTS patient_notes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id  INTEGER NOT NULL,
+      content     TEXT    NOT NULL,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    );
+  `);
+
+  _db.run(`
+    CREATE INDEX IF NOT EXISTS idx_patient_notes_patient_id
+      ON patient_notes(patient_id);
+  `);
+
+  // === Migration: copy non-empty doctor_notes from daily_queue into patient_notes (idempotent) ===
+  // This will copy existing notes (if any) into patient_notes but avoid duplicates using NOT EXISTS.
+  _db.run(`
+    INSERT INTO patient_notes (patient_id, content, created_at)
+    SELECT dq.patient_id, dq.doctor_notes, dq.visit_date
+    FROM daily_queue dq
+    WHERE dq.doctor_notes IS NOT NULL AND TRIM(dq.doctor_notes) != ''
+      AND NOT EXISTS (
+        SELECT 1 FROM patient_notes pn
+        WHERE pn.patient_id = dq.patient_id
+          AND pn.content = dq.doctor_notes
+          AND pn.created_at = dq.visit_date
+      );
+  `);
+
   // Persist schema immediately
   saveToFile();
 }

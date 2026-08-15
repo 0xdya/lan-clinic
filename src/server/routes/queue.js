@@ -8,7 +8,7 @@
  *   GET    /api/queue/:id           - Get a single queue entry
  *   POST   /api/queue               - Add a patient to today's queue
  *   PATCH  /api/queue/:id/status    - Update queue status
- *   PATCH  /api/queue/:id/notes     - Update doctor_notes (Doctor only)
+ *   PATCH  /api/queue/:id/notes     - Add a doctor note (migrated to patient_notes)
  *   DELETE /api/queue/:id           - Remove a queue entry
  */
 
@@ -187,35 +187,37 @@ router.patch('/:id/status', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// PATCH /api/queue/:id/notes  (Doctor-only)
+// PATCH /api/queue/:id/notes  (migrated: create a patient note)
 // ─────────────────────────────────────────────
 router.patch('/:id/notes', (req, res) => {
   try {
     const db = getDb();
     const { doctor_notes } = req.body;
 
-    if (doctor_notes === undefined || doctor_notes === null) {
-      return res.status(400).json({ success: false, error: 'doctor_notes field is required.' });
+    if (doctor_notes === undefined || doctor_notes === null || String(doctor_notes).trim() === '') {
+      return res.status(400).json({ success: false, error: 'doctor_notes field is required and cannot be empty.' });
     }
 
-    const existing = db.get(
-      `${QUEUE_SELECT} WHERE dq.id = ?`,
-      [req.params.id]
-    );
-    if (!existing) {
+    // Get the queue entry to find patient_id
+    const entry = db.get(`SELECT id, patient_id FROM daily_queue WHERE id = ?`, [req.params.id]);
+    if (!entry) {
       return res.status(404).json({ success: false, error: 'Queue entry not found.' });
     }
 
-    db.run(
-      `UPDATE daily_queue SET doctor_notes = ? WHERE id = ?`,
-      [String(doctor_notes), req.params.id]
+    // Insert a new patient_note
+    const result = db.run(
+      `INSERT INTO patient_notes (patient_id, content) VALUES (?, ?)`,
+      [entry.patient_id, String(doctor_notes)]
     );
 
-    const updated = db.get(`${QUEUE_SELECT} WHERE dq.id = ?`, [req.params.id]);
-    res.json({ success: true, data: updated });
+    // Return the created note plus queue entry
+    const note = db.get(`SELECT id, content, created_at FROM patient_notes WHERE id = ?`, [result.lastInsertRowid]);
+    const queueEntry = db.get(`${QUEUE_SELECT} WHERE dq.id = ?`, [req.params.id]);
+
+    res.json({ success: true, data: { queueEntry, note } });
   } catch (err) {
     console.error('[API] PATCH /queue/:id/notes error:', err);
-    res.status(500).json({ success: false, error: 'Failed to update notes.' });
+    res.status(500).json({ success: false, error: 'Failed to add patient note.' });
   }
 });
 

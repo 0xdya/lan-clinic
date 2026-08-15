@@ -16,6 +16,10 @@ const state = {
   doctorFilter: 'all',
   secretaryFilter: 'all',
   notesDebounceTimer: null,
+  unsavedNotes: false,
+  // New for doctor view modes and modal
+  doctorMode: 'waiting', // 'waiting' | 'allPatients'
+  modalPatientId: null,
 };
 
 // ─────────────────────────────────────────────
@@ -60,8 +64,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-save-notes').addEventListener('click', manualSaveNotes);
 
   // Notes editor auto-save on typing (debounced)
-  const notesArea = document.getElementById('doctor-notes-editor');
-  notesArea.addEventListener('input', handleNotesTyping);
+// Notes editor: لا نحفظ تلقائياً، نعلّم ببساطة بوجود تغييرات
+const notesArea = document.getElementById('doctor-notes-editor');
+if (notesArea) notesArea.addEventListener('input', markNotesDirty);
+
 });
 
 function selectRoleCard(role) {
@@ -177,15 +183,12 @@ function initSocketConnection() {
       loadQueueData();
     });
 
-    // Real-time Notes Updates (Doctor saved notes)
-    state.socket.on('notes:updated', (data) => {
-      console.log('[Socket] notes:updated received', data);
-      if (state.activeQueueItem && state.activeQueueItem.id === data.queue_id) {
-        state.activeQueueItem.doctor_notes = data.doctor_notes;
-        if (state.role === 'doctor') {
-          document.getElementById('doctor-notes-editor').value = data.doctor_notes;
-          updateSaveStatus('محفوظ بالشبكة', true);
-        }
+    // Real-time Notes Updates (patient notes changed)
+    state.socket.on('patient:notes-updated', (data) => {
+      console.log('[Socket] patient:notes-updated received', data);
+      // إذا المودال مفتوح لنفس المريض، أعد تحميله
+      if (state.modalPatientId && data && data.patient_id && state.modalPatientId === data.patient_id) {
+        openPatientModal(state.modalPatientId);
       }
     });
   } catch (e) {
@@ -234,10 +237,9 @@ function renderDoctorView() {
     document.getElementById('active-patient-phone').textContent = state.activeQueueItem.phone || '--';
     document.getElementById('active-patient-date').textContent = state.activeQueueItem.visit_date;
 
-    // Load active patient notes if not currently editing
-    if (document.activeElement !== notesEditor) {
-      notesEditor.value = state.activeQueueItem.doctor_notes || '';
-    }
+    // Keep editor content unless user is editing
+    // Editor is used to create a NEW note for the active patient
+    // (We don't prefill it with previous notes)
   } else {
     // Hide active patient banner
     banner.classList.add('hidden');
@@ -247,7 +249,7 @@ function renderDoctorView() {
     }
   }
 
-  // Render Doctor Read-Only Queue Sidebar
+  // Render Doctor Read-Only Queue Sidebar or All Patients list
   renderDoctorQueueList();
 }
 
@@ -255,12 +257,39 @@ function renderDoctorQueueList() {
   const container = document.getElementById('doctor-queue-list');
   const countBadge = document.getElementById('doctor-queue-count');
 
+  if (state.doctorMode === 'allPatients') {
+    // Load full patients list
+    apiFetch('/patients')
+      .then((res) => {
+        const patients = res.data || [];
+        countBadge.textContent = `${patients.length}`;
+        if (patients.length === 0) {
+          container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem 1rem; font-size: 0.88rem;">لا يوجد مرضى مسجلون حالياً.</div>`;
+          return;
+        }
+        container.innerHTML = patients
+          .map((p) => `
+            <div class="queue-item-card" onclick="openPatientModal(${p.id})">
+              <div class="item-patient-name">${escapeHtml(p.full_name)}</div>
+              <div class="item-meta">العمر: ${p.age || '--'} | ${p.phone || '--'}</div>
+            </div>
+          `)
+          .join('');
+      })
+      .catch((err) => {
+        console.error('[App] Load patients for doctor list failed', err);
+        container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem 1rem; font-size: 0.88rem;">تعذر تحميل قائمة المرضى</div>`;
+      });
+    return;
+  }
+
+  // Default: show today's queue (filtered by state.doctorFilter if set)
   let filtered = state.queue;
   if (state.doctorFilter !== 'all') {
     filtered = state.queue.filter((q) => q.status === state.doctorFilter);
   }
 
-  countBadge.textContent = `${filtered.length} مريض`;
+  countBadge.textContent = `${filtered.length}`;
 
   if (filtered.length === 0) {
     container.innerHTML = `
@@ -288,8 +317,9 @@ function renderDoctorQueueList() {
 
       const isCurrentActive = state.activeQueueItem && state.activeQueueItem.id === item.id;
 
+      // Clicking the card opens patient modal for that patient
       return `
-        <div class="queue-item-card ${statusClasses[item.status] || ''} ${isCurrentActive ? 'in-progress' : ''}">
+        <div class="queue-item-card ${statusClasses[item.status] || ''} ${isCurrentActive ? 'in-progress' : ''}" onclick="openPatientModal(${item.patient_id})">
           <div class="item-top-row">
             <span class="item-queue-num">#${item.queue_number}</span>
             <span class="badge-status ${statusClasses[item.status] || ''}">${statusLabels[item.status]}</span>
@@ -305,36 +335,41 @@ function renderDoctorQueueList() {
     .join('');
 }
 
-function filterQueue(status, btn) {
-  state.doctorFilter = status;
+function doctorViewFilter(mode, btn) {
+  state.doctorMode = mode === 'waiting' ? 'waiting' : 'allPatients';
   const tabs = btn.parentElement.querySelectorAll('.tab-btn');
   tabs.forEach((t) => t.classList.remove('active'));
   btn.classList.add('active');
   renderDoctorQueueList();
 }
 
+
 // Quick Notes Template Pill Insertion
 function insertNoteTemplate(text) {
   const notesEditor = document.getElementById('doctor-notes-editor');
+  if (!notesEditor) return;
   if (notesEditor.value.trim().length > 0) {
     notesEditor.value += `\n- ${text}`;
   } else {
     notesEditor.value = `- ${text}`;
   }
-  handleNotesTyping();
+
+  markNotesDirty();
 }
 
-// Debounced Auto-Save for Notes
-function handleNotesTyping() {
-  updateSaveStatus('جاري التغيير...', false);
-  if (state.notesDebounceTimer) clearTimeout(state.notesDebounceTimer);
-  state.notesDebounceTimer = setTimeout(() => {
-    saveDoctorNotes();
-  }, 1000);
+// عندما يكتب المستخدم نعلِم أن هنالك تغييرات غير محفوظة.
+// لا نحفظ تلقائياً هنا.
+function markNotesDirty() {
+  state.unsavedNotes = true;
+  updateSaveStatus('لم يتم الحفظ', false);
+  // إذا كنت تريد إلغاء أي مؤقت سابق (حافظ على النظافة)
+  if (state.notesDebounceTimer) {
+    clearTimeout(state.notesDebounceTimer);
+    state.notesDebounceTimer = null;
+  }
 }
 
 function manualSaveNotes() {
-  if (state.notesDebounceTimer) clearTimeout(state.notesDebounceTimer);
   saveDoctorNotes();
 }
 
@@ -344,23 +379,32 @@ async function saveDoctorNotes() {
     return;
   }
 
-  const notesText = document.getElementById('doctor-notes-editor').value;
+  const notesText = document.getElementById('doctor-notes-editor').value.trim();
+  state.unsavedNotes = false;
+  updateSaveStatus('تم الحفظ بنجاح 🟢', true);
+  if (!notesText) {
+    updateSaveStatus('النص فارغ، لم يتم حفظ شيء', false);
+    return;
+  }
 
   try {
-    await apiFetch(`/queue/${state.activeQueueItem.id}/notes`, {
-      method: 'PATCH',
-      body: JSON.stringify({ doctor_notes: notesText }),
+    // Create a patient note (POST /patients/:id/notes)
+    const patientId = state.activeQueueItem.patient_id;
+    await apiFetch(`/patients/${patientId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ content: notesText }),
     });
 
-    state.activeQueueItem.doctor_notes = notesText;
+    document.getElementById('doctor-notes-editor').value = '';
     updateSaveStatus('تم الحفظ بنجاح 🟢', true);
+
+    // Reload queue / modal if open
+    await loadQueueData();
+    if (state.modalPatientId === patientId) openPatientModal(patientId);
 
     // Notify LAN over Socket.io
     if (state.socket) {
-      state.socket.emit('client:notes-change', {
-        queue_id: state.activeQueueItem.id,
-        doctor_notes: notesText,
-      });
+      state.socket.emit('patient:notes-updated', { patient_id: patientId });
     }
   } catch (err) {
     updateSaveStatus('فشل الحفظ ❌', false);
@@ -389,7 +433,7 @@ function renderSecretaryQueueList() {
     filtered = state.queue.filter((q) => q.status === state.secretaryFilter);
   }
 
-  countBadge.textContent = `${filtered.length} مريض`;
+  countBadge.textContent = `${filtered.length}`;
 
   if (filtered.length === 0) {
     container.innerHTML = `
@@ -594,6 +638,94 @@ async function addExistingPatientToQueue(patientId) {
     }
   } catch (err) {
     alert(`تعذر إضافة المريض للدور: ${err.message}`);
+  }
+}
+
+// ─────────────────────────────────────────────
+// Patient Modal (open, list notes, create/edit/delete)
+// ─────────────────────────────────────────────
+async function openPatientModal(patientId) {
+  try {
+    const [pRes, notesRes] = await Promise.all([
+      apiFetch(`/patients/${patientId}`),
+      apiFetch(`/patients/${patientId}/notes`)
+    ]);
+    const patient = pRes.data;
+    const notes = notesRes.data || [];
+
+    state.modalPatientId = patientId;
+
+    document.getElementById('modal-patient-name').textContent = patient.full_name;
+    document.getElementById('modal-patient-age').textContent = patient.age || '--';
+    document.getElementById('modal-patient-phone').textContent = patient.phone || '--';
+    document.getElementById('modal-patient-created').textContent = patient.created_at || '--';
+
+    const notesList = document.getElementById('modal-notes-list');
+    notesList.innerHTML = notes.map(n => `
+      <div class="note-row" id="note-${n.id}">
+        <div class="note-meta">${n.created_at}</div>
+        <div class="note-content">${escapeHtml(n.content)}</div>
+        <div class="note-actions">
+          <button onclick="editPatientNote(${patientId}, ${n.id})">تعديل</button>
+          <button onclick="deletePatientNote(${patientId}, ${n.id})">حذف</button>
+        </div>
+      </div>
+    `).join('');
+
+    document.getElementById('modal-new-note').value = '';
+    document.getElementById('patient-detail-modal').classList.remove('hidden');
+  } catch (err) {
+    console.error('فتح نافذة المريض فشل:', err);
+    alert('تعذر جلب بيانات المريض');
+  }
+}
+
+function closePatientModal() {
+  state.modalPatientId = null;
+  document.getElementById('patient-detail-modal').classList.add('hidden');
+}
+
+async function createPatientNote() {
+  const patientId = state.modalPatientId;
+  if (!patientId) return;
+  const content = document.getElementById('modal-new-note').value.trim();
+  if (!content) return alert('أدخل نص الملاحظة');
+
+  try {
+    await apiFetch(`/patients/${patientId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ content })
+    });
+    openPatientModal(patientId);
+    if (state.socket) state.socket.emit('patient:notes-updated', { patient_id: patientId });
+  } catch (err) {
+    alert('فشل حفظ الملاحظة');
+  }
+}
+
+async function deletePatientNote(patientId, noteId) {
+  if (!confirm('هل تريد حذف هذه الملاحظة؟')) return;
+  try {
+    await apiFetch(`/patients/${patientId}/notes/${noteId}`, { method: 'DELETE' });
+    openPatientModal(patientId);
+    if (state.socket) state.socket.emit('patient:notes-updated', { patient_id: patientId });
+  } catch (err) {
+    alert('فشل حذف الملاحظة');
+  }
+}
+
+async function editPatientNote(patientId, noteId) {
+  const newContent = prompt('حرر نص الملاحظة:');
+  if (newContent === null) return;
+  try {
+    await apiFetch(`/patients/${patientId}/notes/${noteId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content: newContent })
+    });
+    openPatientModal(patientId);
+    if (state.socket) state.socket.emit('patient:notes-updated', { patient_id: patientId });
+  } catch (err) {
+    alert('فشل تعديل الملاحظة');
   }
 }
 

@@ -163,9 +163,8 @@
           </div>
 
           <div class="filter-tabs">
-            <button class="tab-btn active" onclick="filterQueue('all', this)">الكل</button>
-            <button class="tab-btn" onclick="filterQueue('Waiting', this)">في الانتظار</button>
-            <button class="tab-btn" onclick="filterQueue('Completed', this)">المكتملين</button>
+            <button class="tab-btn active" onclick="doctorViewFilter('waiting', this)">الانتظار</button>
+            <button class="tab-btn" onclick="doctorViewFilter('allPatients', this)">قائمة كل المرضى</button>
           </div>
         </div>
 
@@ -248,6 +247,34 @@
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Patient Detail Modal -->
+  <div id="patient-detail-modal" class="modal-overlay hidden">
+    <div class="patient-modal">
+      <header class="modal-header">
+        <h2 id="modal-patient-name">الاسم</h2>
+        <button class="modal-close-btn" onclick="closePatientModal()">✖</button>
+      </header>
+
+      <section class="patient-info">
+        <div>العمر: <span id="modal-patient-age">--</span></div>
+        <div>الهاتف: <span id="modal-patient-phone">--</span></div>
+        <div>مسجل منذ: <span id="modal-patient-created">--</span></div>
+      </section>
+
+      <section class="patient-notes">
+        <h3>الملاحظات</h3>
+        <div id="modal-notes-list" class="modal-notes-list">
+          <!-- قائمة الملاحظات: كل ملاحظة مع created_at وزر تعديل/حذف -->
+        </div>
+
+        <textarea id="modal-new-note" placeholder="أضف ملاحظة جديدة..." class="modal-new-note"></textarea>
+        <div class="modal-actions">
+          <button class="btn-primary" onclick="createPatientNote()">حفظ ملاحظة</button>
+        </div>
+      </section>
     </div>
   </div>
 
