@@ -206,9 +206,18 @@
             </div>
           </div>
 
-          <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">
+          <!-- <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">
             ➕ تسجيل وإضافة لقائمة الانتظار
           </button>
+           -->
+           <div class="form-actions" style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button type="button" class="btn-register" onclick="handlePatientRegistrationOnly(event)">
+              📝 تسجيل المريض فقط
+            </button>
+            <button type="submit" class="btn-register-and-queue">
+              ➕ تسجيل وإضافة للدور
+            </button>
+          </div>
         </form>
 
         <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0.5rem 0;" />
